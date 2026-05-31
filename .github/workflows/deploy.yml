@@ -1,0 +1,65 @@
+name: Deploy Monitor Stack
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docker-compose.yml'
+      - 'deploy.yml'
+      - '.github/workflows/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Validate docker-compose.yml
+        run: docker compose -f docker-compose.yml config --quiet
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            set -e
+            cd /root/monitor
+            git fetch origin
+            git checkout main
+            git pull origin main
+
+            echo ">>> Pulling latest images..."
+            docker compose pull
+
+            echo ">>> Deploying stack..."
+            docker compose up -d
+            sleep 15
+
+            echo ">>> Verifying containers..."
+            docker ps --filter "name=uptime-kuma" --filter "status=running" | grep -q uptime-kuma \
+              || { echo "ERROR: uptime-kuma not running"; exit 1; }
+            docker ps --filter "name=dozzle" --filter "status=running" | grep -q dozzle \
+              || { echo "ERROR: dozzle not running"; exit 1; }
+            docker ps --filter "name=netdata" --filter "status=running" | grep -q netdata \
+              || { echo "ERROR: netdata not running"; exit 1; }
+
+            echo ">>> Health checks..."
+            curl -sf http://localhost:9001 > /dev/null || { echo "ERROR: uptime-kuma health check failed"; exit 1; }
+            curl -sf http://localhost:9080 > /dev/null || { echo "ERROR: dozzle health check failed"; exit 1; }
+            curl -sf http://localhost:19999/api/v1/info > /dev/null || { echo "ERROR: netdata health check failed"; exit 1; }
+
+            echo ">>> Deploy OK"
