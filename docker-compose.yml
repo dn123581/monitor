@@ -1,0 +1,95 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "9001:3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - monitor-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "com.docker.compose.project=monitor"
+      - "monitor.role=uptime"
+
+  dozzle:
+    image: amir20/dozzle:v8
+    container_name: dozzle
+    restart: unless-stopped
+    ports:
+      - "9080:8080"
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+      DOZZLE_LEVEL: info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - monitor-net
+    healthcheck:
+      test: ["CMD", "/dozzle", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    labels:
+      - "com.docker.compose.project=monitor"
+      - "monitor.role=logs"
+
+  netdata:
+    image: netdata/netdata:stable
+    container_name: netdata
+    hostname: ${HOSTNAME:-docker-host}
+    restart: unless-stopped
+
+    network_mode: host
+    pid: host
+
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+
+    security_opt:
+      - apparmor:unconfined
+
+    volumes:
+      - netdata-config:/etc/netdata
+      - netdata-lib:/var/lib/netdata
+      - netdata-cache:/var/cache/netdata
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker:/var/lib/docker:ro
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19999/api/v1/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    labels:
+      - "com.docker.compose.project=monitor"
+      - "monitor.role=system"
+
+networks:
+  monitor-net:
+    driver: bridge
+    name: monitor-net
+
+volumes:
+  uptime-kuma-data:
+  netdata-config:
+  netdata-lib:
+  netdata-cache:
