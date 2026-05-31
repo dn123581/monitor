@@ -1,28 +1,13 @@
-name: Deploy Monitor Stack
+name: Deploy
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'docker-compose.yml'
-      - 'deploy.yml'
-      - '.github/workflows/**'
 
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Validate docker-compose.yml
-        run: docker compose -f docker-compose.yml config --quiet
-
   deploy:
-    needs: validate
     runs-on: ubuntu-latest
-    if: success()
 
     steps:
       - name: Checkout code
@@ -37,29 +22,24 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script: |
             set -e
+
             cd $HOME/monitor
             git fetch origin
             git checkout main
             git pull origin main
 
-            echo ">>> Pulling latest images..."
+            echo ">>> 1. Pulling latest images..."
             docker compose pull
 
-            echo ">>> Deploying stack..."
-            docker compose up -d
-            sleep 15
-
-            echo ">>> Verifying containers..."
-            docker ps --filter "name=uptime-kuma" --filter "status=running" | grep -q uptime-kuma \
-              || { echo "ERROR: uptime-kuma not running"; exit 1; }
-            docker ps --filter "name=dozzle" --filter "status=running" | grep -q dozzle \
-              || { echo "ERROR: dozzle not running"; exit 1; }
-            docker ps --filter "name=netdata" --filter "status=running" | grep -q netdata \
-              || { echo "ERROR: netdata not running"; exit 1; }
+            echo ">>> 2. Deploying/Updating services (Low-downtime)..."
+            docker compose up -d --wait --wait-timeout 120 --remove-orphans
 
             echo ">>> Health checks..."
-            curl -sf http://localhost:9001 > /dev/null || { echo "ERROR: uptime-kuma health check failed"; exit 1; }
-            curl -sf http://localhost:9080 > /dev/null || { echo "ERROR: dozzle health check failed"; exit 1; }
-            curl -sf http://localhost:19999/api/v1/info > /dev/null || { echo "ERROR: netdata health check failed"; exit 1; }
+            curl -sf http://localhost:9001 > /dev/null || { echo "ERROR: uptime-kuma not reachable"; exit 1; }
+            curl -sf http://localhost:9080 > /dev/null || { echo "ERROR: dozzle not reachable"; exit 1; }
+            curl -sf http://localhost:19999/api/v1/info > /dev/null || { echo "ERROR: netdata not reachable"; exit 1; }
+
+            echo ">>> Status:"
+            docker compose ps
 
             echo ">>> Deploy OK"
