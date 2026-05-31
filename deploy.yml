@@ -37,7 +37,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script: |
             set -e
-            cd /root/monitor
+            cd $HOME/monitor
             git fetch origin
             git checkout main
             git pull origin main
