@@ -5,12 +5,15 @@ WireGuard VPN, uptime monitoring, log viewer, và system metrics.
 
 ## Service
 
-| Service | Image | Host Port | Mô tả |
-|---|---|---|---|
-| **wg-easy** | `ghcr.io/wg-easy/wg-easy:15` | `51820/udp`, `51821/tcp` | WireGuard VPN server + web admin |
-| **uptime-kuma** | `louislam/uptime-kuma:1` | `9001` | Giám sát uptime website/service, cảnh báo qua Telegram/Email/Discord |
-| **dozzle** | `amir20/dozzle:v8` | `9080` | Real-time log viewer cho tất cả Docker container |
-| **netdata** | `netdata/netdata:stable` | `19999` (host mode) | Giám sát hệ thống: CPU, RAM, disk, network, process |
+| Service | Image | Host Port | Bind | Mô tả |
+|---|---|---|---|---|
+| **wg-easy** | `ghcr.io/wg-easy/wg-easy:15` | `51820/udp`, `51821/tcp` | `0.0.0.0` / `127.0.0.1`+`10.42.42.1` | WireGuard VPN server + web admin |
+| **uptime-kuma** | `louislam/uptime-kuma:1` | `9001` | `127.0.0.1` + `10.42.42.1` | Giám sát uptime website/service, cảnh báo qua Telegram/Email/Discord |
+| **dozzle** | `amir20/dozzle:v8` | `9080` | `127.0.0.1` + `10.42.42.1` | Real-time log viewer cho tất cả Docker container |
+| **netdata** | `netdata/netdata:stable` | `19999` (host mode) | host interface | Giám sát hệ thống: CPU, RAM, disk, network, process |
+
+> **Bind addresses**: Các service monitor chỉ bind vào `127.0.0.1` (localhost) và `10.42.42.1` (bridge gateway).
+> Traffic từ internet không thể kết nối trực tiếp vào các port này.
 
 ## Yêu cầu
 
@@ -49,6 +52,7 @@ Kết nối VPN vào VPS, sau đó truy cập qua gateway IP của bridge:
 
 | Service | URL |
 |---|---|
+| wg-easy admin | `http://10.42.42.1:51821` |
 | uptime-kuma | `http://10.42.42.1:9001` |
 | dozzle | `http://10.42.42.1:9080` |
 | netdata | `http://10.42.42.1:19999` |
@@ -103,11 +107,56 @@ Các port host được chọn để tránh xung đột với các dịch vụ p
 
 ## Bảo mật
 
+### Chống lộ port ra internet
+
+**Vấn đề**: Docker mặc định publish port ra `0.0.0.0` (tất cả interface) và tự thêm iptables rule vào chain `DOCKER`. Chain này được duyệt **trước** chain `INPUT` của UFW, khiến UFW không thể chặn traffic vào Docker-published port.
+
+**Giải pháp đã áp dụng**: Bind port vào IP cụ thể thay vì `0.0.0.0`:
+
+| Service | Bind | Internet | localhost | VPN (qua `10.42.42.1`) |
+|---|---|---|---|---|
+| wg-easy (`51820/udp`) | `0.0.0.0` | ✅ | ✅ | ✅ |
+| wg-easy (`51821/tcp`) | `127.0.0.1` + `10.42.42.1` | ❌ | ✅ | ✅ |
+| uptime-kuma (`9001`) | `127.0.0.1` + `10.42.42.1` | ❌ | ✅ | ✅ |
+| dozzle (`9080`) | `127.0.0.1` + `10.42.42.1` | ❌ | ✅ | ✅ |
+| netdata (`19999`) | host mode → UFW kiểm soát | ❌ (UFW) | ✅ | ✅ (UFW wg0) |
+
 - Docker socket được mount **read-only** (`:ro`) trên tất cả service.
-- uptime-kuma và dozzle chạy trong bridge network riêng `wireguard_wg`, không expose port ra ngoài internet. Chỉ truy cập được từ localhost hoặc qua VPN.
 - **WireGuard**: chỉ client có key hợp lệ mới kết nối được. Port `51820/udp` cần mở trên firewall.
-- **wg-easy web admin** (`51821`): cân nhắc không expose port này ra internet. Nếu cần, dùng firewall giới hạn IP hoặc reverse proxy + auth.
-- netdata cần elevated capability (`SYS_PTRACE`, `SYS_ADMIN`) và `pid: host` để thu thập system metrics. Nếu chạy trên môi trường production, cân nhắc giới hạn truy cập vào netdata dashboard qua reverse proxy + auth.
+- **wg-easy web admin** (`51821`): chỉ truy cập qua localhost hoặc VPN, không lộ ra internet.
+- **netdata**: dùng `network_mode: host`, cần `SYS_PTRACE` + `SYS_ADMIN`. Traffic được kiểm soát bởi UFW (xem phần dưới).
+
+### Firewall (UFW)
+
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+
+# SSH
+sudo ufw limit 22/tcp
+
+# WireGuard (public)
+sudo ufw allow 51820/udp
+
+# HTTP/HTTPS (nếu chạy web server khác)
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+# DNS
+sudo ufw allow 53/tcp
+sudo ufw allow 53/udp
+
+# Cho phép VPN client truy cập service monitor qua interface wg0
+# (netdata dùng host mode nên đi qua INPUT chain của UFW)
+sudo ufw allow in on wg0 to any port 9001 proto tcp
+sudo ufw allow in on wg0 to any port 9080 proto tcp
+sudo ufw allow in on wg0 to any port 19999 proto tcp
+
+sudo ufw enable
+```
+
+> **Quan trọng**: Các rule `allow in on wg0` là cần thiết cho netdata (host mode, đi qua INPUT chain).
+> Với uptime-kuma và dozzle, Docker bind IP đã giới hạn traffic — các rule này là defense-in-depth.
 
 ## Cập nhật
 

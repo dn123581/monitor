@@ -16,8 +16,9 @@ services:
       - etc_wireguard:/etc/wireguard
       - /lib/modules:/lib/modules:ro
     ports:
-      - "51820:51820/udp"
-      - "51821:51821/tcp"
+      - "51820:51820/udp"                              # public: WireGuard VPN clients
+      - "127.0.0.1:51821:51821/tcp"                    # localhost only
+      - "10.42.42.1:51821:51821/tcp"                   # VPN qua bridge gateway
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -34,7 +35,8 @@ services:
     container_name: uptime-kuma
     restart: unless-stopped
     ports:
-      - "9001:3001"
+      - "127.0.0.1:9001:3001"
+      - "10.42.42.1:9001:3001"
     volumes:
       - uptime-kuma-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -55,7 +57,8 @@ services:
     container_name: dozzle
     restart: unless-stopped
     ports:
-      - "9080:8080"
+      - "127.0.0.1:9080:8080"
+      - "10.42.42.1:9080:8080"
     environment:
       DOZZLE_NO_ANALYTICS: "true"
       DOZZLE_LEVEL: info
