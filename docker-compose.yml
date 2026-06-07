@@ -17,8 +17,7 @@ services:
       - /lib/modules:/lib/modules:ro
     ports:
       - "51820:51820/udp"                              # public: WireGuard VPN clients
-      - "127.0.0.1:51821:51821/tcp"                    # localhost only
-      - "10.42.42.1:51821:51821/tcp"                   # VPN qua bridge gateway
+      - 51821:51821                    
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
