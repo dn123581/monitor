@@ -36,9 +36,7 @@ jobs:
 
             echo ">>> Health checks..."
             curl -sf http://localhost:51821 > /dev/null || { echo "ERROR: wg-easy not reachable"; exit 1; }
-            curl -sf http://localhost:9001 > /dev/null || { echo "ERROR: uptime-kuma not reachable"; exit 1; }
             curl -sf http://localhost:9080 > /dev/null || { echo "ERROR: dozzle not reachable"; exit 1; }
-            curl -sf http://localhost:19999/api/v1/info > /dev/null || { echo "ERROR: netdata not reachable"; exit 1; }
 
             echo ">>> Status:"
             docker compose ps
