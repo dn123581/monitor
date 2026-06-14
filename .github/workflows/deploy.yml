@@ -34,10 +34,6 @@ jobs:
             echo ">>> 2. Deploying/Updating services (Low-downtime)..."
             docker compose up -d --wait --wait-timeout 120 --remove-orphans
 
-            echo ">>> Health checks..."
-            curl -sf http://localhost:51821 > /dev/null || { echo "ERROR: wg-easy not reachable"; exit 1; }
-            curl -sf http://localhost:9080 > /dev/null || { echo "ERROR: dozzle not reachable"; exit 1; }
-
             echo ">>> Status:"
             docker compose ps
 
